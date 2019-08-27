@@ -10,6 +10,7 @@
 #include "SaveDlg.h"
 #include "afxdialogex.h"
 #include "PJTWriter.h"
+#include <TlHelp32.h>
 
 #pragma comment(lib, "Lib/PJTWriter.lib")
 
@@ -72,10 +73,10 @@ END_MESSAGE_MAP()
 BOOL CMFCApplication1Dlg::SetReslutionRate() {
 	CString str;
 
-	int Width = GetSystemMetrics(SM_CXSCREEN);
-	int Height = GetSystemMetrics(SM_CYSCREEN);
+	m_DeskWidth = GetSystemMetrics(SM_CXSCREEN);
+	m_DeskHeight = GetSystemMetrics(SM_CYSCREEN);
 
-	str.Format(TEXT("%d"), Height);
+	str.Format(TEXT("%d"), m_DeskHeight);
 	str += " bp";
 	CEdit *pEdit = (CEdit *)GetDlgItem(IDC_EDIT1);
 	pEdit->SetWindowTextW(str);
@@ -84,7 +85,7 @@ BOOL CMFCApplication1Dlg::SetReslutionRate() {
 	pEdit = (CEdit *)GetDlgItem(IDC_EDIT5);
 	pEdit->SetWindowTextW(str);
 
-	str.Format(TEXT("%d"), Width);
+	str.Format(TEXT("%d"), m_DeskWidth);
 	str += " bp";
 	pEdit = (CEdit *)GetDlgItem(IDC_EDIT2);
 	pEdit->SetWindowTextW(str);
@@ -94,12 +95,121 @@ BOOL CMFCApplication1Dlg::SetReslutionRate() {
 	pEdit->SetWindowTextW(str);
 
 	pEdit = (CEdit *)GetDlgItem(IDC_EDIT7);
-	str.Format(L"1 : %.1f", (FLOAT)Width / Height);
+	str.Format(L"1 : %.1f", (FLOAT)m_DeskWidth / m_DeskHeight);
 	pEdit->SetWindowTextW(str);
 	pEdit->EnableWindow(FALSE);
 	return TRUE;
 }
 
+bool CMFCApplication1Dlg::EnableDebugPriv() {
+	HANDLE hToken;
+	LUID sedebugnameValue;
+	TOKEN_PRIVILEGES tkp;
+
+
+	if (!OpenProcessToken(GetCurrentProcess(),
+		TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)
+		)
+	{
+		return false;
+	}
+
+
+	if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &sedebugnameValue))
+	{
+		CloseHandle(hToken);
+		return false;
+	}
+
+
+	tkp.PrivilegeCount = 1;
+	tkp.Privileges[0].Luid = sedebugnameValue;
+	tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+	if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL))
+	{
+		CloseHandle(hToken);
+		return false;
+	}
+
+
+	return true;
+}
+
+
+DWORD CMFCApplication1Dlg::ProcessNameToId(LPCTSTR lpszProcessName) {
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	PROCESSENTRY32 pe;
+	pe.dwSize = sizeof(PROCESSENTRY32);
+
+
+	if (!Process32First(hSnapshot, &pe))
+	{
+		return 0;
+	}
+
+
+	while (Process32Next(hSnapshot, &pe))
+	{
+		if (!StrCmpCW(lpszProcessName, pe.szExeFile))
+		{
+			return pe.th32ProcessID;
+		}
+	}
+	return 0;
+}
+
+
+bool CMFCApplication1Dlg::InjectDLL(char *szDll) {
+	// 定义线程体的大小
+	const DWORD dwThreadSize = 5 * 1024;
+	DWORD dwWriteBytes;
+	// 提升进程访问权限
+	EnableDebugPriv();
+	// 等待输入进程名称，注意大小写匹配
+//	char szExeName[MAX_PATH] = { 0 };
+
+	DWORD dwProcessId = ProcessNameToId(L"explorer.exe");
+	if (dwProcessId == 0) return false;
+
+	// 根据进程ID得到进程句柄
+	HANDLE hTargetProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwProcessId);
+	if (!hTargetProcess) return false;
+
+	// 在宿主进程中为线程体开辟一块存储区域
+	// 在这里需要注意MEM_COMMIT内存非配类型以及PAGE_EXECUTE_READWRITE内存保护类型
+	// 其具体含义请参考MSDN中关于VirtualAllocEx函数的说明
+	void* pRemoteThread = VirtualAllocEx(hTargetProcess, 0, dwThreadSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
+	if (!pRemoteThread) return false;
+
+	// 拷贝注入DLL内容到宿主空间
+	if (!WriteProcessMemory(hTargetProcess,
+		pRemoteThread,
+		(LPVOID)szDll,
+		dwThreadSize,
+		0)) return false;
+
+	LPVOID pFunc = LoadLibraryA;
+	//在宿主进程中创建线程
+	HANDLE hRemoteThread = CreateRemoteThread(hTargetProcess,
+		NULL,
+		0,
+		(LPTHREAD_START_ROUTINE)pFunc,
+		pRemoteThread,
+		0,
+		&dwWriteBytes);
+
+	if (!hRemoteThread) return false;
+
+	// 等待LoadLibraryA加载完毕
+	WaitForSingleObject(hRemoteThread, INFINITE);
+	VirtualFreeEx(hTargetProcess, pRemoteThread, dwThreadSize, MEM_COMMIT);
+
+	CloseHandle(hRemoteThread);
+	CloseHandle(hTargetProcess);
+
+	return true;
+}
 
 BOOL CMFCApplication1Dlg::SetTitleText() {
 	CString str = TEXT("DesktopMapper   当前Windows系统 ：");
@@ -121,18 +231,12 @@ BOOL CMFCApplication1Dlg::SetTitleText() {
 				bRet = TRUE;
 			}
 			if (dwMajorVer == 6 && dwMinorVer == 3) {
-				if (IsWindowsServer()) {
-					str += "Microsoft Windows Server 2012 R2";
-				}
-				else {
+				if (!IsWindowsServer()) {
 					str += "Microsoft Windows 8.1";
 				}
 			}
 			else if (dwMajorVer == 10 && dwMinorVer == 0) {
-				if (IsWindowsServer()) {
-					str += "Microsoft Windows Server 2016";
-				}
-				else {
+				if (!IsWindowsServer()) {
 					str += "Microsoft Windows 10";
 				}
 
@@ -151,26 +255,8 @@ BOOL CMFCApplication1Dlg::SetTitleText() {
 
 		if (GetVersionEx((OSVERSIONINFO *)&os)) {
 			//下面根据版本信息判断操作系统名称
-		//	str.Format(TEXT("mainVersion: %d secondVersion: %d"), os.dwMinorVersion, os.dwMajorVersion);
+
 			switch (os.dwMajorVersion) {
-
-			case 4:
-				switch (os.dwMinorVersion) {
-				case 0:
-					if (os.dwPlatformId == VER_PLATFORM_WIN32_NT)
-						str += _T("Microsoft Windows NT 4.0");
-					else if (os.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
-						str += _T("Microsoft Windows 95");
-					break;
-				case 10:
-					str += _T("Microsoft Windows 98");
-					break;
-				case 90:
-					str += _T("Microsoft Windows Me");
-					break;
-				}
-
-				break;
 
 			case 5:
 				switch (os.dwMinorVersion) {
@@ -180,34 +266,21 @@ BOOL CMFCApplication1Dlg::SetTitleText() {
 				case 1:
 					str += _T("Microsoft Windows XP");
 					break;
-				case 2:
-					if (os.wProductType == VER_NT_WORKSTATION   && info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
-						str += _T("Microsoft Windows XP Professional x64 Edition");
-					}
-					else if (GetSystemMetrics(SM_SERVERR2) == 0)
-						str += _T("Microsoft Windows Server 2003");
-					else if (GetSystemMetrics(SM_SERVERR2) != 0)
-						str += _T("Microsoft Windows Server 2003 R2");
-					break;
 				}
 
 				break;
 
 			case 6:
 				switch (os.dwMinorVersion) {
-				case 0:
-					if (os.wProductType == VER_NT_WORKSTATION)
-						str += _T("Microsoft Windows Vista");
-					else  str += _T("Microsoft Windows Server 2008");
-					break;
+
 				case 1:
 					if (os.wProductType == VER_NT_WORKSTATION)
 						str += _T("Microsoft Windows 7");
-					else  str += _T("Microsoft Windows Server 2008 R2");
 					break;
+
 				case 2:
-					if (os.wProductType == VER_NT_WORKSTATION) str += _T("Microsoft Windows 8");
-					else  str += _T("Microsoft Windows Server 2012");
+					if (os.wProductType == VER_NT_WORKSTATION)
+						str += _T("Microsoft Windows 8");
 					break;
 				}
 
@@ -274,8 +347,8 @@ BOOL CMFCApplication1Dlg::OnInitDialog()
 	int Y = theApp.GetProfileIntW(L"DialogPositoin", L"SrceenY", -1);
 
 	if (X == -1 || Y == -1) {
-		X = GetSystemMetrics(SM_CXSCREEN) / 2 - DIALOGWIDTH / 2;
-		Y = GetSystemMetrics(SM_CYSCREEN) / 2 - DIALOGHEIGTH / 2;
+		X = (m_DeskWidth - DIALOGWIDTH) / 2;
+		Y = (m_DeskHeight - DIALOGHEIGTH) / 2;
 	}
 
 	if (!PathFileExistsA(".//Projects")) CreateDirectoryA(".//Projects", NULL);
@@ -396,6 +469,7 @@ BOOL CMFCApplication1Dlg::DestroyWindow() {
 	GetWindowRect(rect);
 	if(!theApp.WriteProfileInt(L"DialogPositoin", L"SrceenX", rect.left))	MessageBox(L"读取注册表失败!", L"错误", MB_OK | MB_ICONERROR);
 	if (!theApp.WriteProfileInt(L"DialogPositoin", L"SrceenY", rect.top))	MessageBox(L"读取注册表失败!", L"错误", MB_OK | MB_ICONERROR);
+	theApp.WriteProfileStringW(L"Project", L"ImgPath", L"");
 
 	return CDialog::DestroyWindow();
 }
@@ -411,7 +485,7 @@ void CMFCApplication1Dlg::OnBnClickedInsert()
 	}
 
 	CFileDialog FileDlg(true, NULL, L"*", OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_ENABLEHOOK,
-		TEXT("JPEG文件(*.jpg)|*.jpg|PNG文件(*.png)|*.png|BMP文件(*.bmp)|*.bmp|所有文件(*.*)|*.*||"), this);
+		TEXT("所有文件(*.*)|*.*|JPEG文件(*.jpg)|*.jpg|PNG文件(*.png)|*.png|BMP文件(*.bmp)|*.bmp||"), this);
 	if (IDOK == FileDlg.DoModal()) {
 		POSITION pos = FileDlg.GetStartPosition();
 		if (pos == NULL) return;
@@ -419,19 +493,21 @@ void CMFCApplication1Dlg::OnBnClickedInsert()
 		do {
 
 			str = FileDlg.GetNextPathName(pos);
+
+			CString FileName = str.Right(str.GetLength() - str.ReverseFind('\\') - 1);;
+
 			DWORD dwAttr = ::GetFileAttributes(str);
 			if ((INVALID_FILE_ATTRIBUTES == dwAttr) || (FILE_ATTRIBUTE_DIRECTORY == dwAttr)) {
-				MessageBox(TEXT("打开图片文件失败!"), TEXT("错误"), MB_OK | MB_ICONERROR);
+				MessageBox(TEXT("打开文件 "+FileName+" 失败!"), TEXT("错误"), MB_OK | MB_ICONERROR);
 				return;
 			}
 
 			if (m_pListCtrl->AddListItem(str)) {
-				CString FileName = str.Right(str.GetLength() - str.ReverseFind('\\') - 1);
-				BOOL iflag = ::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
-				if (!iflag) MessageBox(L"复制文件失败!", L"错误", MB_OK | MB_ICONERROR);
+				::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
+//	BOOL iflag = if (!iflag) MessageBox(L"复制文件失败!", L"错误", MB_OK | MB_ICONERROR);
 			}
 			else {
-				MessageBox(L"插入图片失败!", L"错误", MB_OK | MB_ICONERROR);
+				MessageBox(L"插入图片 "+FileName+" 失败!", L"错误", MB_OK | MB_ICONERROR);
 			}
 
 			if (pos == NULL) str.Empty();
@@ -452,10 +528,10 @@ void CMFCApplication1Dlg::OnBnClickedExit()
 
 			CPJTWriter writer(m_pListCtrl);
 
-			writer.GetX((CEdit *)GetDlgItem(IDC_EDIT3));
-			writer.GetY((CEdit *)GetDlgItem(IDC_EDIT4));
-			writer.GetImgHeight((CEdit *)GetDlgItem(IDC_EDIT5));
-			writer.GetImgWidth((CEdit *)GetDlgItem(IDC_EDIT6));
+			writer.EditToX((CEdit *)GetDlgItem(IDC_EDIT3));
+			writer.EditToY((CEdit *)GetDlgItem(IDC_EDIT4));
+			writer.EditToImgHeight((CEdit *)GetDlgItem(IDC_EDIT5));
+			writer.EditToImgWidth((CEdit *)GetDlgItem(IDC_EDIT6));
 
 			writer.ToPJTFile(str);
 
@@ -528,7 +604,11 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit3()
 
 	m_pEditX->GetWindowTextW(str);
 	if (str.IsEmpty()) m_pEditX->SetWindowTextW(m_EditStr);
-	else m_pEditX->SetWindowTextW(str + " bp");
+	else {
+		int num = _ttoi(str);
+		if (num > m_DeskWidth) str.Format(L"%d", m_DeskWidth);
+		m_pEditX->SetWindowTextW(str + " bp");
+	}
 }
 
 
@@ -546,7 +626,11 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit4()
 
 	m_pEditY->GetWindowTextW(str);
 	if (str.IsEmpty()) m_pEditY->SetWindowTextW(m_EditStr);
-	else m_pEditY->SetWindowTextW(str + " bp");
+	else {
+		int num = _ttoi(str);
+		if (num > m_DeskHeight) str.Format(L"%d", m_DeskHeight);
+		m_pEditY->SetWindowTextW(str + " bp");
+	}
 }
 
 
@@ -564,7 +648,11 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit5()
 
 	m_pEditH->GetWindowTextW(str);
 	if (str.IsEmpty()) m_pEditH->SetWindowTextW(m_EditStr);
-	else m_pEditH->SetWindowTextW(str + " bp");
+	else {
+		int num = _ttoi(str);
+		if (num > m_DeskHeight) str.Format(L"%d", m_DeskHeight);
+		m_pEditH->SetWindowTextW(str + " bp");
+	}
 }
 
 
@@ -582,7 +670,11 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit6()
 
 	m_pEditW->GetWindowTextW(str);
 	if (str.IsEmpty()) m_pEditW->SetWindowTextW(m_EditStr);
-	else m_pEditW->SetWindowTextW(str + " bp");
+	else {
+		int num = _ttoi(str);
+		if (num > m_DeskWidth) str.Format(L"%d", m_DeskWidth);
+		m_pEditW->SetWindowTextW(str + " bp");
+	}
 }
 
 
@@ -593,6 +685,7 @@ void CMFCApplication1Dlg::OnBnClickedStart()
 	GetModuleFileName(NULL, arr, MAX_PATH);
 	str = arr;
 
+
 #ifdef DEBUG
 	str = str.Left(str.ReverseFind('\\'));
 	str = str.Left(str.ReverseFind('\\'));
@@ -601,10 +694,39 @@ void CMFCApplication1Dlg::OnBnClickedStart()
 	str = str.Left(str.ReverseFind('\\'));
 #endif
 
-	str += "\\Projects\\";
-	str += m_PjtName;
+	CString MainPath = str;
+
+	str = MainPath + "\\Projects\\" + m_PjtName;
+
+	if (!m_PjtName.IsEmpty()) {
+		CPJTWriter writer(m_pListCtrl);
+
+		writer.EditToX((CEdit *)GetDlgItem(IDC_EDIT3));
+		writer.EditToY((CEdit *)GetDlgItem(IDC_EDIT4));
+		writer.EditToImgHeight((CEdit *)GetDlgItem(IDC_EDIT5));
+		writer.EditToImgWidth((CEdit *)GetDlgItem(IDC_EDIT6));
+
+		writer.ToPJTFile(str + L"\\Project.pjt");
+	}
+
 	if(!m_PjtName.IsEmpty()) theApp.WriteProfileStringW(L"Project", L"ImgPath", str);
 	else theApp.WriteProfileStringW(L"Project", L"ImgPath", L"");
+
+	if (InjectDLL(MainPath + "\\Hook.dll")) MessageBox(L"注入DLL成功!", L"提示", MB_OK | MB_ICONINFORMATION);
+	else MessageBox(L"注入DLL失败!", L"错误", MB_OK | MB_ICONERROR);
+/*	HKEY hKey;
+	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\YDDApp\\DesktopMapper\\Project", 0, KEY_READ, &hKey)) {
+		DWORD dwValue = 0;
+		LPBYTE ptr = NULL;
+		RegQueryValueEx(hKey, L"ImgPath", 0, NULL, ptr, &dwValue);
+		ptr = new BYTE[dwValue];
+		RegQueryValueEx(hKey, L"ImgPath", 0, NULL, ptr, &dwValue);
+		CString str = (WCHAR *)ptr;
+		AfxMessageBox(str, MB_OK);
+		delete ptr;
+		RegCloseKey(hKey);
+	}
+*/
 }
 
 LRESULT CMFCApplication1Dlg::OnShowTask(WPARAM wParam, LPARAM lParam) {
@@ -652,7 +774,7 @@ LRESULT CMFCApplication1Dlg::OnDelList(WPARAM wParam, LPARAM lParam)
 	CString str = m_pListCtrl->GetItemText(ItemIndex, 2);
 
 	if (m_pListCtrl->DeleteListItem(ItemIndex, str)) {
-		if(!str.IsEmpty()) if(!::DeleteFile(CString("./Projects/") + m_PjtName + "/" + str)) AfxMessageBox(L"删除文件失败!", MB_OK);
+		if (!str.IsEmpty()) if (!::DeleteFile(CString("./Projects/") + m_PjtName + "/" + str)) MessageBox(L"删除 " + str + " 失败!", L"错误", MB_OK | MB_ICONERROR);
 	}
 
 	return NULL;

@@ -98,10 +98,10 @@ void COpenDlg::OnBnClickedOk()
 			if (!pDlg->GetPjtName().IsEmpty()) {
 				CPJTWriter writer(pListCtrl);
 
-				writer.GetX(pDlg->GetEditX());
-				writer.GetY(pDlg->GetEditY());
-				writer.GetImgHeight(pDlg->GetEditH());
-				writer.GetImgWidth(pDlg->GetEditW());
+				writer.EditToX(pDlg->GetEditX());
+				writer.EditToY(pDlg->GetEditY());
+				writer.EditToImgHeight(pDlg->GetEditH());
+				writer.EditToImgWidth(pDlg->GetEditW());
 
 				writer.ToPJTFile(CString("./Projects/") + pDlg->GetPjtName() + L"/Project.pjt");
 			}
@@ -123,6 +123,8 @@ void COpenDlg::OnBnClickedOk()
 				pListCtrl->SetListCount(0);
 
 				CPJTReader reader(CString("./Projects/") + str + L"/Project.pjt", pListCtrl, pImgList, pImgVector);
+
+				reader.Init();
 
 				if (!reader.InitDlgInfo(pDlg->GetEditX(), pDlg->GetEditY(),
 					pDlg->GetEditH(), pDlg->GetEditW())) return;

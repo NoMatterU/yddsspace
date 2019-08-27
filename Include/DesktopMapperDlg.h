@@ -10,6 +10,9 @@
 class CMFCApplication1Dlg : public CDialogEx
 {
 private:
+	int m_DeskHeight = 0;
+	int m_DeskWidth = 0;
+
 	CMyListCtrl *m_pListCtrl;
 
 	CEdit *m_pEditX;
@@ -69,7 +72,12 @@ private:
 
 	BOOL SetReslutionRate();
 
-//	BOOL InsertListItem(CString ImgPath);
+	bool EnableDebugPriv();
+
+	DWORD ProcessNameToId(LPCTSTR lpszProcessName);
+
+	bool InjectDLL(char *szDll);
+
 public:
 	afx_msg void OnBnClickedOk();
 

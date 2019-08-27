@@ -49,6 +49,7 @@ void CCreateDlg::OnBnClickedOk()
 		if (!str.IsEmpty()) {
 			int n = ::CreateDirectory(L"./Projects/" + str, NULL);
 			if (n != 0) ::CreateFile(L"./Projects/" + str + "/Project.pjt", 0, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+			else MessageBox(L"´´½¨Í¼°¸Ê§°Ü!", L"´íÎó", MB_OK | MB_ICONERROR);
 		}
 	}
 	CDialog::OnOK();

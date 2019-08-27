@@ -15,17 +15,21 @@
 // 此类是从 PJTReader.dll 导出的
 class PJTREADER_API CPJTReader {
 private:
-	int x;
-	int y;
-	int ImgWidth;
-	int ImgHeight;
+	int m_X = 0;
+	int m_Y = 0;
+	int m_ImgWidth = 0;
+	int m_ImgHeight = 0;
+	int m_ItemCount = 0;
+
+	int m_PosFlag = 0;
+	char m_ImgPath[MAX_PATH] = { 0 };
 
 	CFile m_file;
 	BOOL IsOpen;
 
-	CListCtrl *m_pListCtrl;
-	CImageList *m_pImgList;
-	ImgListVector *m_pImgVector;
+	CListCtrl *m_pListCtrl = NULL;
+	CImageList *m_pImgList = NULL;
+	ImgListVector *m_pImgVector = NULL;
 
 public:
 	CPJTReader();
@@ -33,12 +37,15 @@ public:
 	CPJTReader(CString FilePath, CListCtrl *pListCtrl, CImageList *pImgList, ImgListVector *pImgVector);
 
 	~CPJTReader();
-	// TODO:  在此添加您的方法。
+
+	VOID Init();
 
 	BOOL InitDlgInfo(CEdit *pEdit1, CEdit *pEdit2, CEdit *pEdit3, CEdit *pEdit4);
 
 	int InitListInfo(CString PjtName);
 
 protected:
-	BOOL InsertListItem(CString ImgPath, int nItem, CString LastTime);
+	BOOL InsertListItem(CString ImgPath, int nItem, short LastTime);
+private:
+	CString ByteToWchar(char *pstr);
 };
