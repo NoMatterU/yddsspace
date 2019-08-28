@@ -22,7 +22,7 @@ private:
 	int m_ItemCount = 0;
 
 	int m_PosFlag = 0;
-	WCHAR m_ImgPath[256] = { 0 };
+	char m_ImgPath[MAX_PATH] = { 0 };
 
 	CFile m_file;
 	BOOL IsOpen;
@@ -46,4 +46,6 @@ public:
 
 protected:
 	BOOL InsertListItem(CString ImgPath, int nItem, short LastTime);
+private:
+	CString ByteToWchar(char *pstr);
 };

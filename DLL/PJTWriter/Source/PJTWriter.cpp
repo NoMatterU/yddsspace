@@ -99,11 +99,13 @@ BOOL CPJTWriter::ToPJTFile(CString FilePath) {
 
 		for (int i = 0; i < ItemCount; i++) {
 			CString str = m_pListCtrl->GetItemText(i, 2);
+			memset(ImgName, 0, MAX_PATH);
+			this->WCharToByte(str);
 
-			unsigned char len = str.GetLength() * sizeof(WCHAR);
+			unsigned char len = str.GetLength();
+			if (len > 255) len = 255;
 			file.Write(&len, 1);
-			file.Write(str.GetBuffer(), len);
-			str.ReleaseBuffer();
+			file.Write(ImgName, len);
 
 			str = m_pListCtrl->GetItemText(i, 4);
 			str = str.Left(str.GetLength() - 3);
@@ -119,6 +121,14 @@ BOOL CPJTWriter::ToPJTFile(CString FilePath) {
 	}
 	return TRUE;
 }
+
+void CPJTWriter::WCharToByte(CString str)
+{
+	DWORD dwNum = WideCharToMultiByte(CP_OEMCP, NULL, str.GetBuffer(), -1, NULL, 0, NULL, FALSE);
+	WideCharToMultiByte(CP_OEMCP, NULL, str.GetBuffer(), -1, ImgName, dwNum, NULL, FALSE);
+	str.ReleaseBuffer();
+}
+
 // 唯一的应用程序对象
 
 CWinApp theApp;

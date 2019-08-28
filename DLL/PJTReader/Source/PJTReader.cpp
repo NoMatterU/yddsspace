@@ -74,17 +74,20 @@ int CPJTReader::InitListInfo(CString PjtName) {
 
 		if (m_ItemCount < 0) return -1;
 
+		CString str = L"./Projects/";
+		str = str + PjtName + '/';
+
 		for (int i = 0; i < m_ItemCount; i++) {
 			unsigned char num = 0;
-			memset(m_ImgPath, 0, sizeof(WCHAR) * 256);
 			short LastTime = 0;
 
-			m_file.Read(&num, sizeof(unsigned char));
+			memset(m_ImgPath, 0, MAX_PATH);
+			m_file.Read(&num, 1);
 			m_file.Read(m_ImgPath, num);
 
 			m_file.Read(&LastTime, 2);
 
-			InsertListItem(CString("./Projects/") + PjtName + L"/" + m_ImgPath, i, LastTime);
+			InsertListItem(str + ByteToWchar(m_ImgPath), i, LastTime);
 		}
 	}
 	return m_ItemCount;
@@ -124,6 +127,15 @@ BOOL CPJTReader::InsertListItem(CString ImgPath, int nItem, short LastTime) {
 	m_pListCtrl->SetItemText(nItem, 4, str);
 
 	return TRUE;
+}
+
+CString CPJTReader::ByteToWchar(char * pstr)
+{
+	if (pstr == NULL) return NULL;
+	WCHAR arr[MAX_PATH] = { 0 };
+	DWORD dwNum = MultiByteToWideChar(CP_ACP, NULL, pstr, -1, NULL, 0);
+	MultiByteToWideChar(CP_ACP, NULL, pstr, -1, arr, dwNum);
+	return arr;
 }
 
 // 唯一的应用程序对象

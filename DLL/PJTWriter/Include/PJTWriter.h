@@ -20,6 +20,8 @@ private:
 	int ImgWidth;
 	int ImgHeight;
 
+	char ImgName[MAX_PATH];
+
 public:
 	CPJTWriter();
 
@@ -37,5 +39,8 @@ public:
 	// ÖØÐ´
 public:
 	BOOL ToPJTFile(CString FilePath);
+
+private:
+	void WCharToByte(CString str);
 
 };
