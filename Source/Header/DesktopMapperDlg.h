@@ -12,6 +12,7 @@ class CMFCApplication1Dlg : public CDialogEx
 private:
 	int m_DeskHeight = 0;
 	int m_DeskWidth = 0;
+	BOOL IsInject = FALSE;
 
 	CMyListCtrl *m_pListCtrl;
 
@@ -78,6 +79,15 @@ private:
 
 	bool InjectDLL(char *szDll);
 
+	bool DetchDLL();
+
+	bool CheckSuffix(CString FileName);
+
+	bool CheckInput();
+
+	bool TranstToBMP(CString srcPath, CString destPath);
+
+	bool GetImageCLSID(const WCHAR* format, CLSID* pCLSID);
 public:
 	afx_msg void OnBnClickedOk();
 

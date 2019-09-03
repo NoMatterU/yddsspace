@@ -103,15 +103,16 @@ void COpenDlg::OnBnClickedOk()
 				writer.EditToImgHeight(pDlg->GetEditH());
 				writer.EditToImgWidth(pDlg->GetEditW());
 
-				writer.ToPJTFile(CString("./Projects/") + pDlg->GetPjtName() + L"/Project.pjt");
+				if (!writer.ToPJTFile(CString("./Projects/") + pDlg->GetPjtName() + L"/Project.pjt")) {
+					MessageBox(L"保存图案失败", L"错误", MB_OK | MB_ICONERROR);
+					return;
+				}
 			}
 
 			CImageList *pImgList = pListCtrl->GetpImgList();
 			ImgListVector *pImgVector = pListCtrl->GetpImgVector();
 
 			if (pDlg->GetPjtName() != str) {
-
-				pDlg->SetPjtName(str);
 
 				int ImgCount = pImgList->GetImageCount();
 				for (int i = 0; i < ImgCount; i++) pImgList->Remove(0);
@@ -124,15 +125,18 @@ void COpenDlg::OnBnClickedOk()
 
 				CPJTReader reader(CString("./Projects/") + str + L"/Project.pjt", pListCtrl, pImgList, pImgVector);
 
-				reader.Init();
+				if (!reader.Init()) {
+					MessageBox(L"打开图案失败", L"错误", MB_OK | MB_ICONERROR);
+					return;
+				}
 
 				if (!reader.InitDlgInfo(pDlg->GetEditX(), pDlg->GetEditY(),
 					pDlg->GetEditH(), pDlg->GetEditW())) return;
 
 				int ItemCount = reader.InitListInfo(str);
 				if (ItemCount >= 0) pListCtrl->SetListCount(ItemCount);
-				else return;
 
+				pDlg->SetPjtName(str);
 			}
 //			else {
 //				AfxMessageBox(L"打开同一个图案", MB_OK);

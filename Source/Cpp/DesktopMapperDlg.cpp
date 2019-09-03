@@ -72,6 +72,7 @@ END_MESSAGE_MAP()
 
 BOOL CMFCApplication1Dlg::SetReslutionRate() {
 	CString str;
+	//初始化编辑框值
 
 	m_DeskWidth = GetSystemMetrics(SM_CXSCREEN);
 	m_DeskHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -98,6 +99,9 @@ BOOL CMFCApplication1Dlg::SetReslutionRate() {
 	str.Format(L"1 : %.1f", (FLOAT)m_DeskWidth / m_DeskHeight);
 	pEdit->SetWindowTextW(str);
 	pEdit->EnableWindow(FALSE);
+
+	m_pEditX->SetWindowTextW(TEXT("0 bp"));
+	m_pEditY->SetWindowTextW(TEXT("0 bp"));
 	return TRUE;
 }
 
@@ -209,6 +213,118 @@ bool CMFCApplication1Dlg::InjectDLL(char *szDll) {
 	CloseHandle(hTargetProcess);
 
 	return true;
+}
+
+bool CMFCApplication1Dlg::DetchDLL()
+{
+	BOOL bMore = FALSE, bFound = FALSE;
+	HANDLE hSnapshot, hProcess, hThread;
+	HMODULE hModule = NULL;
+	MODULEENTRY32 me = { sizeof(me) };
+	LPTHREAD_START_ROUTINE pThreadProc;
+
+
+	DWORD dwProcessId = ProcessNameToId(L"explorer.exe");
+	if (dwProcessId == 0) return false;
+
+	hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwProcessId);
+	bMore = Module32First(hSnapshot, &me);
+	for (; bMore; bMore = Module32Next(hSnapshot, &me))
+	{
+		if (!_tcsicmp((LPCTSTR)me.szModule, L"Hook.dll") || !_tcsicmp((LPCTSTR)me.szExePath, L"Hook.dll"))
+		{
+			bFound = TRUE;
+			break;
+		}
+	}
+	if (!bFound)
+	{
+		CloseHandle(hSnapshot);
+		return false;
+	}
+	if (!(hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwProcessId)))
+	{
+		return false;
+	}
+	hModule = GetModuleHandle(L"Kernel32.dll");
+	pThreadProc = (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "FreeLibrary");
+	hThread = CreateRemoteThread(hProcess, NULL, 0, pThreadProc, me.modBaseAddr, 0, NULL);
+	WaitForSingleObject(hThread, INFINITE);
+
+	CloseHandle(hThread);
+	CloseHandle(hProcess);
+	CloseHandle(hSnapshot);
+	return true;
+}
+
+bool CMFCApplication1Dlg::CheckSuffix(CString FileName)
+{
+	CString str = FileName.Right(FileName.GetLength() - FileName.ReverseFind('.') - 1);
+	if (str == "jpg" || str == "png" || str == "bmp") return true;
+	if (str == "JPG" || str == "PNG" || str == "BMP") return true;
+	return false;
+}
+
+bool CMFCApplication1Dlg::CheckInput()
+{
+	CString str;
+
+	m_pEditX->GetWindowTextW(str);
+	int x = _ttoi(str);
+	m_pEditY->GetWindowTextW(str);
+	int y = _ttoi(str);
+	m_pEditH->GetWindowTextW(str);
+	int Height = _ttoi(str);
+	m_pEditW->GetWindowTextW(str);
+	int Width = _ttoi(str);
+
+	if (x + Width > m_DeskWidth && y + Height > m_DeskHeight) return false;
+
+	return true;
+}
+
+bool CMFCApplication1Dlg::TranstToBMP(CString srcPath, CString destPath)
+{
+	Image img(srcPath);//这里的图片可以是其它格式Graphics 
+	CLSID pngClsid;
+
+//	Bitmap Png(srcPath);
+//	Bitmap Jpg(Png.GetWidth(), Png.GetHeight());
+
+	Graphics g(&img);
+
+	TextureBrush br(&img);
+	g.Clear(0xFFFFFFFF);  // 白色背景
+	g.FillRectangles((Brush *)&br, &Rect(0, 0, img.GetWidth(), img.GetHeight()), 1);
+//	g.DrawLine(&p, Point(0, 0), Point(20, 20));
+	g.DrawImage(&img, 0, 0, img.GetWidth(), img.GetHeight());
+
+	//这里的图片可以是其它格式，此处转化为BMP格式
+	if (!GetImageCLSID(L"image/bmp", &pngClsid)) return false;
+
+	img.Save(destPath, &pngClsid, NULL);
+
+	return true;
+}
+
+bool CMFCApplication1Dlg::GetImageCLSID(const WCHAR * format, CLSID * pCLSID)
+{
+	UINT num = 0, size = 0;
+	ImageCodecInfo *pImageCodecInfo = NULL;
+	GetImageEncodersSize(&num, &size);
+	if (size == 0) return false;
+	pImageCodecInfo = (ImageCodecInfo *)malloc(size);
+	if (pImageCodecInfo == NULL) return false;
+	GetImageEncoders(num, size, pImageCodecInfo);
+	for (UINT i = 0; i < num; i++) {
+		if (wcscmp(pImageCodecInfo->MimeType, format) == 0) {
+			*pCLSID = pImageCodecInfo->Clsid;
+			free(pImageCodecInfo);
+			return true;
+		}
+	}
+	free(pImageCodecInfo);
+	return false;
 }
 
 BOOL CMFCApplication1Dlg::SetTitleText() {
@@ -376,13 +492,6 @@ BOOL CMFCApplication1Dlg::OnInitDialog()
 //	m_pListCtrl->ShowScrollBar(SB_VERT, TRUE);
 	m_pListCtrl->ShowWindow(true);
 
-
-	//初始化编辑框值
-	CEdit *pEdit = (CEdit *)GetDlgItem(IDC_EDIT3);
-	pEdit->SetWindowTextW(TEXT("0 bp"));
-	pEdit = (CEdit *)GetDlgItem(IDC_EDIT4);
-	pEdit->SetWindowTextW(TEXT("0 bp"));
-
 	this->SetTitleText();
 
 	this->InitList();
@@ -494,20 +603,28 @@ void CMFCApplication1Dlg::OnBnClickedInsert()
 
 			str = FileDlg.GetNextPathName(pos);
 
-			CString FileName = str.Right(str.GetLength() - str.ReverseFind('\\') - 1);;
+			CString FileName = str.Right(str.GetLength() - str.ReverseFind('\\') - 1);
+
+			if (!CheckSuffix(FileName)) break;
 
 			DWORD dwAttr = ::GetFileAttributes(str);
 			if ((INVALID_FILE_ATTRIBUTES == dwAttr) || (FILE_ATTRIBUTE_DIRECTORY == dwAttr)) {
 				MessageBox(TEXT("打开文件 "+FileName+" 失败!"), TEXT("错误"), MB_OK | MB_ICONERROR);
 				return;
 			}
-
+			//C://User//admin//Desktop//MFCapplication//MFCApplication1///
 			if (m_pListCtrl->AddListItem(str)) {
-				::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
-//	BOOL iflag = if (!iflag) MessageBox(L"复制文件失败!", L"错误", MB_OK | MB_ICONERROR);
+				CString Suffix = FileName.Right(FileName.GetLength() - FileName.ReverseFind('.') - 1);
+				if(Suffix == L"bmp" || Suffix == L"BMP")
+					::CopyFile(str, L"./Projects/" + m_PjtName + L'/' + FileName, FALSE);
+				else
+					TranstToBMP(str, L".//Projects//"+m_PjtName+L'/'+ FileName);
+//				BOOL iflag = 
+////				::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
+//				if (!iflag) MessageBox(L"复制文件失败!", L"错误", MB_OK | MB_ICONERROR);
 			}
 			else {
-				MessageBox(L"插入图片 "+FileName+" 失败!", L"错误", MB_OK | MB_ICONERROR);
+				MessageBox(L"插入图片 "+FileName+" 失败", L"错误", MB_OK | MB_ICONERROR);
 			}
 
 			if (pos == NULL) str.Empty();
@@ -528,13 +645,14 @@ void CMFCApplication1Dlg::OnBnClickedExit()
 
 			CPJTWriter writer(m_pListCtrl);
 
-			writer.EditToX((CEdit *)GetDlgItem(IDC_EDIT3));
-			writer.EditToY((CEdit *)GetDlgItem(IDC_EDIT4));
-			writer.EditToImgHeight((CEdit *)GetDlgItem(IDC_EDIT5));
-			writer.EditToImgWidth((CEdit *)GetDlgItem(IDC_EDIT6));
+			writer.EditToX(m_pEditX);
+			writer.EditToY(m_pEditY);
+			writer.EditToImgHeight(m_pEditH);
+			writer.EditToImgWidth(m_pEditW);
 
 			writer.ToPJTFile(str);
 
+			if (IsInject) if (!DetchDLL()) MessageBox(L"卸载DLL失败", L"错误", MB_OK | MB_ICONERROR);
 		}
 		CDialog::OnCancel();
 	}
@@ -628,7 +746,7 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit4()
 	if (str.IsEmpty()) m_pEditY->SetWindowTextW(m_EditStr);
 	else {
 		int num = _ttoi(str);
-		if (num > m_DeskHeight) str.Format(L"%d", m_DeskHeight);
+		if (num > m_DeskHeight) str.Format(L"%d", m_DeskWidth);
 		m_pEditY->SetWindowTextW(str + " bp");
 	}
 }
@@ -650,7 +768,7 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit5()
 	if (str.IsEmpty()) m_pEditH->SetWindowTextW(m_EditStr);
 	else {
 		int num = _ttoi(str);
-		if (num > m_DeskHeight) str.Format(L"%d", m_DeskHeight);
+		if (num > m_DeskHeight) str.Format(L"%d", m_DeskWidth);
 		m_pEditH->SetWindowTextW(str + " bp");
 	}
 }
@@ -680,6 +798,11 @@ void CMFCApplication1Dlg::OnEnKillfocusEdit6()
 
 void CMFCApplication1Dlg::OnBnClickedStart()
 {
+	if (m_PjtName.IsEmpty()) {
+		MessageBox(L"No Project Exits", L"提示", MB_OK | MB_ICONQUESTION);
+		return;
+	}
+
 	CString str;
 	WCHAR arr[MAX_PATH] = { 0 };
 	GetModuleFileName(NULL, arr, MAX_PATH);
@@ -687,7 +810,7 @@ void CMFCApplication1Dlg::OnBnClickedStart()
 
 
 #ifdef DEBUG
-	str = str.Left(str.ReverseFind('\\'));
+//	str = str.Left(str.ReverseFind('\\'));
 	str = str.Left(str.ReverseFind('\\'));
 #endif // DEBUG
 #ifndef DEBUG
@@ -698,22 +821,41 @@ void CMFCApplication1Dlg::OnBnClickedStart()
 
 	str = MainPath + "\\Projects\\" + m_PjtName;
 
-	if (!m_PjtName.IsEmpty()) {
-		CPJTWriter writer(m_pListCtrl);
-
-		writer.EditToX((CEdit *)GetDlgItem(IDC_EDIT3));
-		writer.EditToY((CEdit *)GetDlgItem(IDC_EDIT4));
-		writer.EditToImgHeight((CEdit *)GetDlgItem(IDC_EDIT5));
-		writer.EditToImgWidth((CEdit *)GetDlgItem(IDC_EDIT6));
-
-		writer.ToPJTFile(str + L"\\Project.pjt");
+	//x y Width Height 输入检测
+	if (!CheckInput()) {
+		MessageBox(L"参数范围过大或过小", L"提示", MB_OK | MB_ICONINFORMATION);
+		return;
 	}
+
+	CPJTWriter writer(m_pListCtrl);
+
+	writer.EditToX(m_pEditX);
+	writer.EditToY(m_pEditY);
+	writer.EditToImgHeight(m_pEditH);
+	writer.EditToImgWidth(m_pEditW);
+
+	if (!writer.ToPJTFile(str + L"\\Project.pjt")) {
+		MessageBox(L"保存图案失败", L"错误", MB_OK | MB_ICONERROR);
+		return;
+	}
+
 
 	if(!m_PjtName.IsEmpty()) theApp.WriteProfileStringW(L"Project", L"ImgPath", str);
 	else theApp.WriteProfileStringW(L"Project", L"ImgPath", L"");
 
-	if (InjectDLL(MainPath + "\\Hook.dll")) MessageBox(L"注入DLL成功!", L"提示", MB_OK | MB_ICONINFORMATION);
-	else MessageBox(L"注入DLL失败!", L"错误", MB_OK | MB_ICONERROR);
+	if (IsInject) {
+		if (DetchDLL()) IsInject = FALSE;
+		else MessageBox(L"卸载DLL失败!", L"提示", MB_OK | MB_ICONINFORMATION);
+	}
+	else {
+		if (InjectDLL(MainPath + "\\Hook.dll")) {
+//			MessageBox(L"注入DLL成功!", L"提示", MB_OK | MB_ICONINFORMATION);
+			IsInject = TRUE;
+		}
+		else {
+			MessageBox(L"注入DLL失败!", L"错误", MB_OK | MB_ICONERROR);
+		}
+	}
 /*	HKEY hKey;
 	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\YDDApp\\DesktopMapper\\Project", 0, KEY_READ, &hKey)) {
 		DWORD dwValue = 0;
@@ -796,9 +938,14 @@ void CMFCApplication1Dlg::OnDropFiles(HDROP hDropInfo)
 		WCHAR wcStr[MAX_PATH] = { 0 };
 		DragQueryFile(hDropInfo, i, wcStr, MAX_PATH);
 		CString str = wcStr;
+		CString FileName = str.Right(str.GetLength() - str.ReverseFind('\\') - 1);
 		if (m_pListCtrl->AddListItem(str)) {
-			BOOL iflag = ::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + str.Right(str.GetLength() - str.ReverseFind('\\') - 1), FALSE);
-			if (!iflag) MessageBox(L"复制文件失败!", L"错误", MB_OK);
+//			BOOL iflag = 
+			::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
+//			if (!iflag) MessageBox(L"复制文件失败!", L"错误", MB_OK);
+		}
+		else {
+			MessageBox(L"插入图片"+FileName+"失败", L"错误", MB_OK | MB_ICONERROR);
 		}
 	}
 	DragFinish(hDropInfo);

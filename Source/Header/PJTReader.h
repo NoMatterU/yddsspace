@@ -38,7 +38,7 @@ public:
 
 	~CPJTReader();
 
-	VOID Init();
+	BOOL Init();
 
 	BOOL InitDlgInfo(CEdit *pEdit1, CEdit *pEdit2, CEdit *pEdit3, CEdit *pEdit4);
 
