@@ -587,6 +587,7 @@ BOOL CMFCApplication1Dlg::DestroyWindow() {
 void CMFCApplication1Dlg::OnBnClickedInsert()
 {
 	CString str;
+	int ImgCount = 0;
 
 	if (m_PjtName.IsEmpty()) {
 		MessageBox(L"No Project Exits", L"Ã· æ", MB_OK | MB_ICONQUESTION);
@@ -600,6 +601,9 @@ void CMFCApplication1Dlg::OnBnClickedInsert()
 		if (pos == NULL) return;
 		
 		do {
+
+			if (ImgCount < 8) ImgCount++;
+			else goto end;
 
 			str = FileDlg.GetNextPathName(pos);
 
@@ -615,10 +619,11 @@ void CMFCApplication1Dlg::OnBnClickedInsert()
 			//C://User//admin//Desktop//MFCapplication//MFCApplication1///
 			if (m_pListCtrl->AddListItem(str)) {
 				CString Suffix = FileName.Right(FileName.GetLength() - FileName.ReverseFind('.') - 1);
-				if(Suffix == L"bmp" || Suffix == L"BMP")
-					::CopyFile(str, L"./Projects/" + m_PjtName + L'/' + FileName, FALSE);
-				else
-					TranstToBMP(str, L".//Projects//"+m_PjtName+L'/'+ FileName);
+				if (Suffix == L"bmp" || Suffix == L"BMP")
+					::CopyFile(str, L"./Projects/" + m_PjtName + L'/' + FileName.Left(FileName.Find('.')) + L".dat", FALSE);
+				else {
+					TranstToBMP(str, L"./Projects/" + m_PjtName + L'/' + FileName.Left(FileName.Find('.')) + L".dat");
+				}
 //				BOOL iflag = 
 ////				::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
 //				if (!iflag) MessageBox(L"∏¥÷∆Œƒº˛ ß∞‹!", L"¥ÌŒÛ", MB_OK | MB_ICONERROR);
@@ -632,6 +637,7 @@ void CMFCApplication1Dlg::OnBnClickedInsert()
 		
 	}
 	// π±ÍÃ‚¿∏±‰∫⁄
+end:
 	this->SendMessage(WM_NCACTIVATE, true, 0);
 }
 
@@ -652,7 +658,7 @@ void CMFCApplication1Dlg::OnBnClickedExit()
 
 			writer.ToPJTFile(str);
 
-			if (IsInject) if (!DetchDLL()) MessageBox(L"–∂‘ÿDLL ß∞‹", L"¥ÌŒÛ", MB_OK | MB_ICONERROR);
+			if (IsInject) DetchDLL();
 		}
 		CDialog::OnCancel();
 	}
@@ -810,7 +816,7 @@ void CMFCApplication1Dlg::OnBnClickedStart()
 
 
 #ifdef DEBUG
-//	str = str.Left(str.ReverseFind('\\'));
+	str = str.Left(str.ReverseFind('\\'));
 	str = str.Left(str.ReverseFind('\\'));
 #endif // DEBUG
 #ifndef DEBUG
@@ -844,17 +850,12 @@ void CMFCApplication1Dlg::OnBnClickedStart()
 	else theApp.WriteProfileStringW(L"Project", L"ImgPath", L"");
 
 	if (IsInject) {
-		if (DetchDLL()) IsInject = FALSE;
-		else MessageBox(L"–∂‘ÿDLL ß∞‹!", L"Ã· æ", MB_OK | MB_ICONINFORMATION);
+		if (!DetchDLL()) MessageBox(L"–∂‘ÿDLL ß∞‹", L"Ã· æ", MB_OK | MB_ICONINFORMATION);
+		IsInject = FALSE;
 	}
 	else {
-		if (InjectDLL(MainPath + "\\Hook.dll")) {
-//			MessageBox(L"◊¢»ÎDLL≥…π¶!", L"Ã· æ", MB_OK | MB_ICONINFORMATION);
-			IsInject = TRUE;
-		}
-		else {
-			MessageBox(L"◊¢»ÎDLL ß∞‹!", L"¥ÌŒÛ", MB_OK | MB_ICONERROR);
-		}
+		if (!InjectDLL(MainPath + "\\Hook.dll")) MessageBox(L"◊¢»ÎDLL ß∞‹", L"¥ÌŒÛ", MB_OK | MB_ICONERROR);
+		IsInject = TRUE;
 	}
 /*	HKEY hKey;
 	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\YDDApp\\DesktopMapper\\Project", 0, KEY_READ, &hKey)) {
@@ -916,6 +917,7 @@ LRESULT CMFCApplication1Dlg::OnDelList(WPARAM wParam, LPARAM lParam)
 	CString str = m_pListCtrl->GetItemText(ItemIndex, 2);
 
 	if (m_pListCtrl->DeleteListItem(ItemIndex, str)) {
+		str = str.Left(str.ReverseFind('.')) + L".dat";
 		if (!str.IsEmpty()) if (!::DeleteFile(CString("./Projects/") + m_PjtName + "/" + str)) MessageBox(L"…æ≥˝ " + str + "  ß∞‹!", L"¥ÌŒÛ", MB_OK | MB_ICONERROR);
 	}
 
@@ -934,15 +936,21 @@ void CMFCApplication1Dlg::OnDropFiles(HDROP hDropInfo)
 {
 	UINT DropCount = DragQueryFile(hDropInfo, 0xffffffff, NULL, 0);
 	
+	if (DropCount > 8) return;
+
 	for (UINT i = 0; i < DropCount; i++) {
 		WCHAR wcStr[MAX_PATH] = { 0 };
 		DragQueryFile(hDropInfo, i, wcStr, MAX_PATH);
 		CString str = wcStr;
 		CString FileName = str.Right(str.GetLength() - str.ReverseFind('\\') - 1);
 		if (m_pListCtrl->AddListItem(str)) {
-//			BOOL iflag = 
-			::CopyFile(str, CString("./Projects/") + m_PjtName + "/" + FileName, FALSE);
-//			if (!iflag) MessageBox(L"∏¥÷∆Œƒº˛ ß∞‹!", L"¥ÌŒÛ", MB_OK);
+
+			CString Suffix = FileName.Right(FileName.GetLength() - FileName.ReverseFind('.') - 1);
+			if (Suffix == L"bmp" || Suffix == L"BMP")
+				::CopyFile(str, L"./Projects/" + m_PjtName + L'/' + FileName.Left(FileName.Find('.')) + L".dat", FALSE);
+			else {
+				TranstToBMP(str, L"./Projects/" + m_PjtName + L'/' + FileName.Left(FileName.Find('.')) + L".dat");
+			}
 		}
 		else {
 			MessageBox(L"≤Â»ÎÕº∆¨"+FileName+" ß∞‹", L"¥ÌŒÛ", MB_OK | MB_ICONERROR);

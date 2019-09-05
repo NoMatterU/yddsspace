@@ -123,7 +123,7 @@ void COpenDlg::OnBnClickedOk()
 				
 				pListCtrl->SetListCount(0);
 
-				CPJTReader reader(CString("./Projects/") + str + L"/Project.pjt", pListCtrl, pImgList, pImgVector);
+				CPJTReader reader(CString("./Projects/") + str + L"/Project.pjt", pListCtrl, pImgList, pListCtrl->GetpImgVector());
 
 				if (!reader.Init()) {
 					MessageBox(L"´ò¿ªÍ¼°¸Ê§°Ü", L"´íÎó", MB_OK | MB_ICONERROR);
